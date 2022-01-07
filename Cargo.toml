@@ -1,0 +1,13 @@
+[package]
+name = "seaport"
+description = "Reliable UDP networking library"
+repository = "https://github.com/jprochazk/seaport"
+license = "MIT"
+version = "0.0.0"
+authors = ["jprochazk"]
+edition = "2021"
+readme = "README.md"
+
+[lib]
+path = "src/lib.rs"
+
