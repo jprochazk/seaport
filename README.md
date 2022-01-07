@@ -12,6 +12,6 @@ Note: This library is under heavy development and almost nothing is implemented 
 | fragmentation          | nyi    |
 | multiplexing           | nyi    |
 
-- reliability:
-  - lacking client-side implementation
+- sockets + reliability:
+  - lacking client-side wrapper
   - untested
