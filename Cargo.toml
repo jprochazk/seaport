@@ -11,3 +11,16 @@ readme = "README.md"
 [lib]
 path = "src/lib.rs"
 
+[dependencies]
+log = "0.4"
+thiserror = "1"
+mio = { version = "0.8", features = ["os-poll", "net"] }
+crossbeam = "0.8"
+serde = { version = "1", features = ["derive"] }
+bincode = "1.3.3"
+indexmap = "1.7.0"
+rand = { version = "0.8.4", features = ["small_rng"] }
+
+[dev-dependencies]
+env_logger = "0.9"
+pretty_assertions = "1"
