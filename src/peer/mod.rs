@@ -59,7 +59,6 @@ type PeerTable = IndexMap<SocketAddr, PeerState>;
 type PeerQueue = SwapQueue<SocketAddr>;
 
 pub(crate) struct PeerManager {
-  capacity: usize,
   table: PeerTable,
   // Safety: Every address in `queue` must be present in `table`
   queue: PeerQueue,
@@ -68,23 +67,46 @@ pub(crate) struct PeerManager {
 impl PeerManager {
   pub fn new(capacity: usize) -> Self {
     Self {
-      capacity,
       table: PeerTable::with_capacity(capacity),
       queue: PeerQueue::new(capacity),
     }
   }
 
-  pub fn dequeue(&mut self) -> Option<&mut PeerState> {
-    self.queue.get().map(|a| {
-      // get the peer, then insert it back into the queue
+  pub fn len(&self) -> usize {
+    self.table.len()
+  }
+
+  pub fn capacity(&self) -> usize {
+    self.table.capacity()
+  }
+
+  pub fn is_full(&self) -> bool {
+    self.table.len() == self.table.capacity()
+  }
+
+  /// # Panics
+  /// if `is_full() == true`.
+  pub fn add_peer(&mut self, addr: SocketAddr) {
+    assert_ne!(self.table.len(), self.table.capacity());
+    self.table.insert(addr, PeerState::new(addr));
+    self.queue.put(addr);
+  }
+
+  pub fn remove_peer(&mut self, addr: SocketAddr) {
+    self.table.remove(&addr);
+    self.queue.remove(|v| *v == addr);
+  }
+
+  pub fn dequeue_packet(&mut self) -> Option<&mut PeerState> {
+    self.queue.get().and_then(|a| {
+      // get the peer, then insert it back into the queue if it still exists in `table`
       let peer = self.table.get_mut(&a);
       self.queue.put(a);
-      // Safety: Every `SocketAddr` in `peer_queue` is also in `peer_table`.
-      unsafe { peer.unwrap_unchecked() }
+      peer
     })
   }
 
-  pub fn enqueue(&mut self, addr: SocketAddr, packet: Packet) {
+  pub fn enqueue_packet(&mut self, addr: SocketAddr, packet: Packet) {
     if let Some(peer) = self.table.get_mut(&addr) {
       peer.unsent_packets.put(packet);
     } else {
@@ -105,4 +127,15 @@ impl PeerManager {
       self.queue.swap();
     }
   }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  // TODO: write tests for packet queueing, adding peers, etc.
+  // cases:
+  // - 1 peer, 1 packet
+  // - N peers, 1xN packets
+  // - 0 peers, 0 packets
 }

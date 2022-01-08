@@ -176,7 +176,7 @@ impl<H: Server> State<H> {
             is_reliable,
           } => self
             .peer_mgr
-            .enqueue(peer.addr(), Packet::new(payload, is_reliable)),
+            .enqueue_packet(peer.addr(), Packet::new(payload, is_reliable)),
           Command::Disconnect { peer } => {} // TODO: disconnect peer
           Command::Shutdown { signal } => {
             // TODO: disconnect all peers

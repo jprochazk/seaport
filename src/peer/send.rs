@@ -186,7 +186,7 @@ pub(crate) fn send_some<S: Socket>(
   buffer: &mut Vec<u8>,
   socket: &S,
 ) -> io::Result<()> {
-  while let Some(peer) = peers.dequeue() {
+  while let Some(peer) = peers.dequeue_packet() {
     let now = Instant::now().elapsed();
     if now - peer.last_send > peer.send_interval {
       peer.last_send = now;
