@@ -15,11 +15,8 @@ use std::{
   hash::{Hash, Hasher},
 };
 
-use serde::{Deserialize, Serialize};
-
-#[derive(Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct Protocol(u64);
+#[derive(Clone, Copy, PartialEq)]
+pub struct Protocol(pub u64);
 
 impl<T: Hash> From<T> for Protocol {
   fn from(v: T) -> Self {

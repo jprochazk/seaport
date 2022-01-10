@@ -24,6 +24,8 @@ impl Peer {
   }
 }
 
+// TODO: symmetric key encryption established during handshake
+
 pub(crate) struct PeerState {
   pub addr: SocketAddr,
   // TODO: multiple channels to avoid head-of-line blocking caused by reliable packets
@@ -84,10 +86,8 @@ impl PeerManager {
     self.table.len() == self.table.capacity()
   }
 
-  /// # Panics
-  /// if `is_full() == true`.
+  /// Note: Do not call if `mgr.is_full()` is true
   pub fn add_peer(&mut self, addr: SocketAddr) {
-    assert_ne!(self.table.len(), self.table.capacity());
     self.table.insert(addr, PeerState::new(addr));
     self.queue.put(addr);
   }

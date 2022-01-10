@@ -28,6 +28,7 @@ impl Error {
   }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Reason {
   /// The connection was gracefully closed on either side via `.close()`.
   Normal,

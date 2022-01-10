@@ -1,47 +1,13 @@
 use crate::{
-  error::{Error, Reason},
-  packet::Packet,
+  error::Error,
+  packet::{Deserializer, Packet, Serializer},
   peer::{recv_some, send_some, Handler, Peer, PeerManager},
   Protocol,
 };
 use crossbeam::channel::{self, Receiver as RawReceiver, Sender as RawSender};
 use mio::{net::UdpSocket, Events, Interest, Poll, Token};
 use rand::{rngs::SmallRng, SeedableRng};
-use std::{borrow::Cow, net::SocketAddr, time::Duration};
-
-pub enum Decision {
-  Accept,
-  Reject(Option<Cow<'static, str>>),
-}
-
-pub trait Server {
-  /// Called when the server receives a whole packet from a client.
-  fn on_payload(&mut self, peer: Peer, payload: &[u8]) -> Result<(), Error>;
-  /// Called just before the server accepts a client with:
-  /// - `peer`, an opaque token representing the connection, and used as the `send` field in the `Sender`.
-  /// - `payload`, which is an opaque buffer storing the userdata associated with the handshake. The data is transported
-  /// *after* encryption is established, so it may contain authentication credentials, for example.
-  ///
-  /// Returning `Reject(...)` will result in the server rejecting the client with the given reason, if any.
-  #[allow(unused_variables)]
-  fn on_before_connect(&mut self, peer: Peer, payload: &[u8]) -> Result<Decision, Error> {
-    Ok(Decision::Accept)
-  }
-  /// Called after the server accepts a client.
-  fn on_connect(&mut self, peer: Peer) -> Result<(), Error>;
-  /// Called after a client disconnects from the server.
-  fn on_disconnect(&mut self, peer: Peer, reason: Reason) -> Result<(), Error>;
-  /// Called when the connection encounters an error, including those returned by the user-implemented handler methods.
-  ///
-  /// The implementation treats all errors as unrecoverable.
-  fn on_error(&mut self, error: Error);
-}
-
-impl<H: Server> Handler for H {
-  fn on_payload(&mut self, peer: Peer, payload: &[u8]) -> Result<(), Error> {
-    Server::on_payload(self, peer, payload)
-  }
-}
+use std::{net::SocketAddr, time::Duration};
 
 enum Command {
   Send {
@@ -75,13 +41,14 @@ impl Default for Config {
   }
 }
 
-struct State<H: Server> {
-  protocol: Protocol,
+struct State<H: Handler> {
   addr: SocketAddr,
   socket: UdpSocket,
   chan: RawReceiver<Command>,
   handler: H,
   scratch_space: Vec<u8>,
+  serializer: Serializer,
+  deserializer: Deserializer,
   // TODO: configurable timeout (based on send rate)
   poll_timeout: Duration,
   poll: Poll,
@@ -91,7 +58,7 @@ struct State<H: Server> {
   rng: SmallRng,
 }
 
-impl<H: Server> State<H> {
+impl<H: Handler> State<H> {
   const SOCKET: Token = Token(0);
   fn new(
     config: Config,
@@ -101,7 +68,7 @@ impl<H: Server> State<H> {
   ) -> Result<Self, Error> {
     let mut socket = UdpSocket::bind(addr)?;
     // enough to hold the maximum size of a UDP datagram
-    let scratch_space = Vec::with_capacity(1 << 16);
+    let scratch_space = vec![0u8; 1 << 16];
     let poll_timeout = Duration::from_secs_f32(1.0 / 60.0);
     let poll = Poll::new()?;
     poll.registry().register(
@@ -110,12 +77,13 @@ impl<H: Server> State<H> {
       Interest::READABLE | Interest::WRITABLE,
     )?;
     Ok(Self {
-      protocol: config.protocol,
       addr,
       socket,
       chan,
       handler,
       scratch_space,
+      serializer: Serializer::new(config.protocol),
+      deserializer: Deserializer::new(config.protocol),
       poll_timeout,
       poll,
       events: Events::with_capacity(1024),
@@ -143,7 +111,7 @@ impl<H: Server> State<H> {
           // write, then read
           if event.is_writable() {
             send_some(
-              self.protocol,
+              &self.serializer,
               &mut self.peer_mgr,
               &mut self.scratch_space,
               &self.socket,
@@ -151,7 +119,7 @@ impl<H: Server> State<H> {
           }
           if event.is_readable() {
             recv_some(
-              self.protocol,
+              &self.deserializer,
               &mut self.peer_mgr,
               &mut self.scratch_space,
               &self.socket,
@@ -246,7 +214,7 @@ impl Sender {
 pub fn listen<F, H>(addr: SocketAddr, factory: F) -> Result<(), Error>
 where
   F: FnOnce(Sender) -> H,
-  H: Server,
+  H: Handler,
 {
   listen_with(Config::default(), addr, factory)
 }
@@ -257,7 +225,7 @@ where
 pub fn listen_with<F, H>(config: Config, addr: SocketAddr, factory: F) -> Result<(), Error>
 where
   F: FnOnce(Sender) -> H,
-  H: Server,
+  H: Handler,
 {
   let (send, recv) = channel::bounded(32);
   State::new(config, addr, recv, factory(Sender::new(send)))?.run();

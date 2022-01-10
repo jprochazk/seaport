@@ -69,6 +69,10 @@ impl<T> Queue<T> {
     self.remaining() == 0
   }
 
+  pub fn is_full(&self) -> bool {
+    self.remaining() == self.buffer.capacity()
+  }
+
   /// Returns `Some(T)` if the queue is full
   pub fn put(&mut self, item: T) -> Option<T> {
     if self.buffer[self.head].is_none() {
