@@ -88,6 +88,7 @@ struct PeerManager {
   queue: PeerQueue,
 }
 
+#[allow(dead_code)]
 impl PeerManager {
   fn new(capacity: usize) -> Self {
     Self {

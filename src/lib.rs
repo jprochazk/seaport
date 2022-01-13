@@ -3,8 +3,6 @@ pub mod error;
 pub mod peer;
 pub mod server;
 
-// TODO: prelude
-
 mod packet;
 mod queue;
 mod seq;

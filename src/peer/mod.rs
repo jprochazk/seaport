@@ -88,7 +88,7 @@ impl PeerState {
       .packet_queue
       .get()
       .unwrap_unchecked()
-      .into_unsent_unchecked();
+      .into_initial_unchecked();
     // push into the sequence buffer, so that we can track if this packet was acked
     self
       .send_buffer
@@ -153,7 +153,6 @@ pub(crate) type PeerQueue = SwapQueue<SocketAddr>;
 
 #[cfg(test)]
 mod tests {
-  use super::*;
 
   // TODO: write tests for packet queueing, adding peers, etc.
   // cases:

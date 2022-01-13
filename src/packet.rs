@@ -49,6 +49,7 @@ pub enum Packet {
   Pending(Pending),
 }
 
+#[allow(dead_code)]
 impl Packet {
   pub fn new(payload: Vec<u8>, is_reliable: bool) -> Self {
     Packet::Initial(Initial {
@@ -74,17 +75,9 @@ impl Packet {
     })
   }
 
+  /// Safety: `matches!(self, Initial(..))` must be true.
   #[inline]
-  pub fn into_payload(self) -> Vec<u8> {
-    match self {
-      Packet::Initial(Initial { payload, .. }) => payload,
-      Packet::Pending(Pending { payload, .. }) => payload,
-    }
-  }
-
-  /// Safety: `matches!(self, Unsent(..))` must be true.
-  #[inline]
-  pub unsafe fn into_unsent_unchecked(self) -> Initial {
+  pub unsafe fn into_initial_unchecked(self) -> Initial {
     match self {
       Packet::Initial(v) => v,
       Packet::Pending(_) => core::hint::unreachable_unchecked(),

@@ -6,6 +6,7 @@ pub struct Queue<T> {
   tail: usize,
 }
 
+#[allow(dead_code)]
 impl<T> Queue<T> {
   pub fn new(capacity: usize) -> Self {
     let mut buffer = Vec::new();
@@ -152,6 +153,7 @@ pub struct SwapQueue<T> {
   write: Queue<T>,
 }
 
+#[allow(dead_code)]
 impl<T> SwapQueue<T> {
   pub fn new(capacity: usize) -> Self {
     Self {

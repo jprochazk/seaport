@@ -6,8 +6,6 @@ use crate::{
 };
 use std::io;
 
-// TODO: write tests
-
 pub enum Recv<'a> {
   Stop,
   Bad(Peer),

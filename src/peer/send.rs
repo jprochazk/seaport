@@ -5,8 +5,6 @@ use crate::{
 };
 use std::{io, time::Instant};
 
-// TODO: write tests
-
 pub(crate) fn send_one<S: Socket>(
   serializer: &Serializer,
   peer: &mut PeerState,
@@ -17,13 +15,14 @@ pub(crate) fn send_one<S: Socket>(
   match peer.packet_queue.peek() {
     None => Ok(Continue),
     Some(outgoing) => match outgoing {
-      Packet::Initial(unsent) => {
+      Packet::Initial(packet) => {
         // serialize and send the packet
         match socket.send_to(
-          serializer.serialize(buffer, PacketData::new(peer, &unsent.payload[..])),
+          serializer.serialize(buffer, PacketData::new(peer, &packet.payload[..])),
           peer.addr,
         ) {
           Ok(_) => {
+            // the packet was sent succesfully
             // Safety:
             //   - `get()` will return `Some`, because `peek()` did as well.
             //   - we already matched on the `Packet` being `Unsent`.
@@ -37,10 +36,9 @@ pub(crate) fn send_one<S: Socket>(
           Err(e) => Err(e),
         }
       }
-      Packet::Pending(pending) => {
-        if peer.is_acked(pending.sequence) {
+      Packet::Pending(packet) => {
+        if peer.is_acked(packet.sequence) {
           // we've received an ACK for this packet, which means it was received successfully.
-          // we can remove the packet from the queue
           // Safety:
           //   - `get()` will return `Some`, because `peek()` did as well.
           //   - `into_pending_unchecked()` will not fail, because we already matched on it being `Pending`.
@@ -49,14 +47,14 @@ pub(crate) fn send_one<S: Socket>(
         } else {
           // we haven't received an ACK yet.
           let now = Instant::now().elapsed();
-          if now - pending.sent_at > peer.rtt {
+          if now - packet.sent_at > peer.rtt {
             // the packet has been unsent for at least one round trip.
             // this may indicate that it is lost, so we will re-send it here.
             // TODO: increment a lost packet counter
 
             // serialize and send the packet
             match socket.send_to(
-              serializer.serialize(buffer, PacketData::from_pending(peer, pending)),
+              serializer.serialize(buffer, PacketData::from_pending(peer, packet)),
               peer.addr,
             ) {
               Ok(_) => {
@@ -163,7 +161,7 @@ mod tests {
     );
   }
   #[test]
-  fn unsent__unreliable__queue_non_full() {
+  fn initial__unreliable__queue_non_full() {
     let (socket, _, receiver) = socket(None);
     let serializer = Serializer::new(PROTOCOL);
     let mut buffer = vec![0u8; 1 << 16];
@@ -187,7 +185,7 @@ mod tests {
   }
 
   #[test]
-  fn unsent__reliable__queue_non_full() {
+  fn initial__reliable__queue_non_full() {
     let (socket, _, receiver) = socket(None);
     let serializer = Serializer::new(PROTOCOL);
     let mut buffer = vec![0u8; 1 << 16];
@@ -216,7 +214,7 @@ mod tests {
   }
 
   #[test]
-  fn unsent__queue_full() {
+  fn initial__queue_full() {
     // reliability doesn't matter in this case
     let (socket, sender, receiver) = socket(Some(1));
     let serializer = Serializer::new(PROTOCOL);
