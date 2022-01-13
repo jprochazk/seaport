@@ -93,7 +93,7 @@ mod tests {
   #[test]
   fn buffer_wraps() {
     let size = 64usize;
-    let mut buffer = Buffer::<bool>::new(size);
+    let mut buffer = Buffer::new(size);
 
     buffer.insert(64, true);
     assert!(buffer.inner[0].item);

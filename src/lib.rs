@@ -25,3 +25,15 @@ impl<T: Hash> From<T> for Protocol {
     Self(s.finish())
   }
 }
+
+pub mod prelude {
+  pub use crate::client;
+  pub use client::connect;
+  pub use client::connect_with;
+
+  pub use crate::server;
+  pub use server::listen;
+  pub use server::listen_with;
+
+  pub use crate::peer::Handler;
+}

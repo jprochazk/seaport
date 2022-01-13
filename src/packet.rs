@@ -31,7 +31,7 @@ impl Default for PacketInfo {
 pub type Buffer = seq::Buffer<PacketInfo>;
 
 #[derive(Debug, Clone)]
-pub struct Unsent {
+pub struct Initial {
   pub payload: Vec<u8>,
   pub is_reliable: bool,
 }
@@ -43,7 +43,7 @@ pub struct Pending {
 }
 #[derive(Debug, Clone)]
 pub enum Packet {
-  Unsent(Unsent),
+  Initial(Initial),
   /// A pending packet represents a reliable packet that is awaiting re-transmission in case it is lost.
   /// `is_reliable == true` is implied
   Pending(Pending),
@@ -51,15 +51,15 @@ pub enum Packet {
 
 impl Packet {
   pub fn new(payload: Vec<u8>, is_reliable: bool) -> Self {
-    Packet::Unsent(Unsent {
+    Packet::Initial(Initial {
       payload,
       is_reliable,
     })
   }
 
   #[inline]
-  pub fn unsent(payload: Vec<u8>, is_reliable: bool) -> Packet {
-    Packet::Unsent(Unsent {
+  pub fn initial(payload: Vec<u8>, is_reliable: bool) -> Packet {
+    Packet::Initial(Initial {
       payload,
       is_reliable,
     })
@@ -77,16 +77,16 @@ impl Packet {
   #[inline]
   pub fn into_payload(self) -> Vec<u8> {
     match self {
-      Packet::Unsent(Unsent { payload, .. }) => payload,
+      Packet::Initial(Initial { payload, .. }) => payload,
       Packet::Pending(Pending { payload, .. }) => payload,
     }
   }
 
   /// Safety: `matches!(self, Unsent(..))` must be true.
   #[inline]
-  pub unsafe fn into_unsent_unchecked(self) -> Unsent {
+  pub unsafe fn into_unsent_unchecked(self) -> Initial {
     match self {
-      Packet::Unsent(v) => v,
+      Packet::Initial(v) => v,
       Packet::Pending(_) => core::hint::unreachable_unchecked(),
     }
   }
@@ -96,7 +96,7 @@ impl Packet {
   pub unsafe fn into_pending_unchecked(self) -> Pending {
     match self {
       Packet::Pending(v) => v,
-      Packet::Unsent(_) => core::hint::unreachable_unchecked(),
+      Packet::Initial(_) => core::hint::unreachable_unchecked(),
     }
   }
 }
@@ -204,16 +204,18 @@ impl Serializer {
 
   /// # Panics
   /// If `buffer` is not large enough to hold `size_of::<PacketData> + MTU`.
-  pub fn serialize(&self, buffer: &mut [u8], data: PacketData<'_>) -> usize {
+  pub fn serialize<'b>(&self, buffer: &'b mut [u8], data: PacketData<'_>) -> &'b [u8] {
     assert!(buffer.len() >= MAX_PACKET_SIZE as usize);
     use std::io::{Cursor, Write};
-    let mut writer = Cursor::new(buffer);
+    let mut writer = Cursor::new(&mut *buffer);
     let _ = writer.write(&self.protocol.0.to_le_bytes());
     let _ = writer.write(&data.sequence.to_le_bytes());
     let _ = writer.write(&data.ack.to_le_bytes());
     let _ = writer.write(&data.ack_bits.to_le_bytes());
     let _ = writer.write(data.payload);
-    writer.position() as usize
+    let size = writer.position() as usize;
+    drop(writer);
+    &buffer[0..size]
   }
 }
 
@@ -333,9 +335,10 @@ mod tests {
       ack_bits: 0,
       payload: &[3, 2, 1, 0],
     };
-    let size = serializer.serialize(&mut buffer, expected.clone());
-
-    assert_eq!(deserializer.deserialize(&buffer[0..size]), Some(expected));
+    assert_eq!(
+      deserializer.deserialize(serializer.serialize(&mut buffer, expected.clone())),
+      Some(expected)
+    );
   }
 
   #[test]

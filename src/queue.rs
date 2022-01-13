@@ -21,7 +21,7 @@ impl<T> Queue<T> {
     match self
       .iter()
       .enumerate()
-      .find(|(n, (i, v))| predicate(*v))
+      .find(|(_, (_, v))| predicate(*v))
       .map(|(n, (i, _))| (i, n))
     {
       Some((i, n)) => {

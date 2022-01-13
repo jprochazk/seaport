@@ -9,6 +9,8 @@ pub enum Error {
   User(Box<dyn StdError + Send + Sync>),
 }
 
+pub type Result<T> = std::result::Result<T, Error>;
+
 impl Error {
   pub fn custom<T>(err: T) -> Error
   where
