@@ -59,7 +59,7 @@ fn send_some(
 
 fn recv_some<H: Handler>(
   deserializer: &Deserializer,
-  peers: &mut PeerTable,
+  peers: &mut PeerManager,
   buffer: &mut [u8],
   socket: &UdpSocket,
   handler: &mut H,
@@ -147,8 +147,12 @@ impl PeerManager {
 pub const MTU: usize = 1024;
 
 pub struct Config {
+  /// An opaque value that represents you protocol (and its version).
   pub protocol: Protocol,
+  /// The maximum allowed number of client connections.
   pub max_peers: usize,
+  /// The frequency at which packets are sent.
+  pub send_rate: u32,
 }
 
 impl Default for Config {
@@ -156,6 +160,7 @@ impl Default for Config {
     Self {
       protocol: Protocol::from(0),
       max_peers: 64,
+      send_rate: 30,
     }
   }
 }
@@ -172,7 +177,7 @@ struct State<H: Handler> {
   poll: Poll,
   events: Events,
   max_peers: usize,
-  peer_mgr: PeerManager,
+  peers: PeerManager,
   running: bool,
 }
 
@@ -195,11 +200,11 @@ impl<H: Handler> State<H> {
       buffer: vec![0u8; 1 << 16],
       serializer: Serializer::new(config.protocol),
       deserializer: Deserializer::new(config.protocol),
-      poll_timeout: Duration::from_secs_f32(1.0 / 60.0),
+      poll_timeout: Duration::from_secs_f32(1.0 / (config.send_rate * 2) as f32),
       poll,
       events: Events::with_capacity(1024),
       max_peers: config.max_peers,
-      peer_mgr: PeerManager::new(config.max_peers),
+      peers: PeerManager::new(config.max_peers),
       running: true,
     })
   }
@@ -215,7 +220,7 @@ impl<H: Handler> State<H> {
             if event.is_writable() {
               send_some(
                 &self.serializer,
-                &mut self.peer_mgr,
+                &mut self.peers,
                 &mut self.buffer,
                 &self.socket,
               )?;
@@ -223,7 +228,7 @@ impl<H: Handler> State<H> {
             if event.is_readable() {
               recv_some(
                 &self.deserializer,
-                &mut self.peer_mgr.table,
+                &mut self.peers,
                 &mut self.buffer,
                 &self.socket,
                 &mut self.handler,
@@ -247,7 +252,7 @@ impl<H: Handler> State<H> {
               is_reliable,
             } => {
               self
-                .peer_mgr
+                .peers
                 .enqueue_packet(peer.addr(), Packet::new(payload, is_reliable));
             }
             Command::Disconnect { peer } => {} // TODO: disconnect peer

@@ -150,13 +150,3 @@ impl PeerState {
 
 pub(crate) type PeerTable = HashMap<SocketAddr, PeerState>;
 pub(crate) type PeerQueue = SwapQueue<SocketAddr>;
-
-#[cfg(test)]
-mod tests {
-
-  // TODO: write tests for packet queueing, adding peers, etc.
-  // cases:
-  // - 1 peer, 1 packet
-  // - N peers, 1xN packets
-  // - 0 peers, 0 packets
-}
