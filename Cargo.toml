@@ -2,7 +2,7 @@
 name = "seaport"
 description = "Reliable UDP networking library"
 repository = "https://github.com/jprochazk/seaport"
-license = "MIT"
+license = "MIT OR Apache-2.0"
 version = "0.0.0"
 authors = ["jprochazk"]
 edition = "2021"
