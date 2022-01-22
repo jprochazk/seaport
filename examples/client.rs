@@ -17,7 +17,7 @@ fn main() -> io::Result<()> {
 
   const DATA: &[u8] = b"testtesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttest";
 
-  let socket = net::UdpSocket::bind("127.0.0.1:0").unwrap();
+  let socket = net::UdpSocket::bind("0.0.0.0:0").unwrap();
   socket.connect("127.0.0.1:9000").unwrap();
   socket.set_nonblocking(true).unwrap();
 
@@ -26,7 +26,6 @@ fn main() -> io::Result<()> {
   loop {
     match socket.send(DATA) {
       Ok(..) => {
-        println!("sent {} bytes", DATA.len());
         nb_sent += DATA.len();
       }
       Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
