@@ -1,29 +1,3 @@
-/*
-- store segments instead of cells
-- each segment is up to 256 bytes
-- every segment except the last one is 256 bytes
-- each message is up to 256 segments
-- info:
-  - number of segments
-  - length of last segment
-  - ack field (1 bit per segment)
-
-each packet will contain:
-- ack frame
-- segment frames
-
-thoughts about packet assembly and acks:
-
-we ack entire packets, not individual segments
-the segment acks can be inferred from the contents of an acked packet
-acks are encoded as ranges
-an ack frame may contain one or more ranges
-
-for the time being, don't try to assemble packets from different channels, just send one packet per channel.
-this is definitely an optimization worth doing, but only after everything else is confirmed working
-
-*/
-
 use {
   crate::detail::ceil_div,
   std::{ops::Range, ptr},
