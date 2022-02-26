@@ -1,0 +1,298 @@
+/*
+- store segments instead of cells
+- each segment is up to 256 bytes
+- every segment except the last one is 256 bytes
+- each message is up to 256 segments
+- info:
+  - number of segments
+  - length of last segment
+  - ack field (1 bit per segment)
+
+each packet will contain:
+- ack frame
+- segment frames
+
+thoughts about packet assembly and acks:
+
+we ack entire packets, not individual segments
+the segment acks can be inferred from the contents of an acked packet
+acks are encoded as ranges
+an ack frame may contain one or more ranges
+
+for the time being, don't try to assemble packets from different channels, just send one packet per channel.
+this is definitely an optimization worth doing, but only after everything else is confirmed working
+
+*/
+
+use {
+  crate::detail::ceil_div,
+  std::{ops::Range, ptr},
+};
+
+// We need to be able to ack 256 segments at 1 bit per segment
+const ACK_FIELD_LEN: usize = 256 / 8;
+const SEGMENT_SIZE: usize = 256;
+
+/// A message is a wrapper over a payload which keeps track of the acknowledgement status of disjoint segments.
+#[repr(align(16))]
+pub struct Message {
+  /// Stores the ack field and the payload
+  ///
+  /// This is not a `Vec`, because it is never reallocated.
+  /// It is also not a `Box`, because we do not need to store the length as `usize`,
+  /// we can already obtain it by calculating `32 + num_segments * 256 + last_segment_len`,
+  /// and those can be `u8` fields due to the limits on the maximum segment and message sizes.
+  ///
+  /// The layout is as follows:
+  /// ```no_run
+  /// [ ack_field : 32 , payload : (num_segments * 256 + last_segment_len) ]
+  /// ```
+  data: ptr::NonNull<u8>,
+  /// The number of full segments. A full segment is 256 bytes.
+  num_full_segments: u8,
+  /// The length of the last segment in bytes.
+  ///
+  /// This may be 0 if the payload length is a multiple of 256.
+  last_segment_len: u8,
+  /// Whether or not this message is guaranteed to be delivered.
+  is_reliable: bool,
+}
+static_assertions::assert_eq_size!(Message, [u8; 16]);
+
+impl Message {
+  /// Constructs a new message, wrapping `payload` with ack tracking.
+  ///
+  /// The payload must not be empty and it must not be larger than 64 KiB (u16::MAX + 1).
+  ///
+  /// ### Panics
+  ///
+  /// If `payload.len() > u16::MAX`
+  pub fn new(is_reliable: bool, payload: &[u8]) -> Self {
+    if payload.len() > u16::MAX as usize {
+      panic!("payload is too large");
+    }
+
+    let num_segments = ceil_div(payload.len(), SEGMENT_SIZE);
+    let num_full_segments = payload.len() / SEGMENT_SIZE;
+    let last_segment_len = payload.len() % SEGMENT_SIZE;
+
+    // allocate data, copy payload into it
+    let mut data = vec![0u8; ACK_FIELD_LEN + num_full_segments * SEGMENT_SIZE + last_segment_len];
+    data[ACK_FIELD_LEN..ACK_FIELD_LEN + payload.len()].copy_from_slice(payload);
+
+    // initialize all acks after `num_segments` to 1
+    // this ensures that `get_unacked_segment` will not attempt to return segments which are out of bounds
+    for offset in num_segments..ACK_FIELD_LEN * 8 {
+      let byte = offset / 8;
+      let bit = offset % 8;
+      data[byte] |= 1 << bit;
+    }
+
+    // discard the capacity and length fields
+    let data = ptr::NonNull::new(Box::into_raw(data.into_boxed_slice()) as *mut u8).unwrap();
+    Self {
+      data,
+      num_full_segments: num_full_segments as u8,
+      last_segment_len: last_segment_len as u8,
+      is_reliable,
+    }
+  }
+
+  // get segment (offset: u8) -> &[u8]
+  // set segment (offset: u8, data: &[u8])
+  // get unacked segment (offset: u8) -> Option<&[u8]>
+
+  /// Set segment ack status in range `start..start+length` to acknowledged.
+  pub fn ack(&mut self, range: Range<u8>) {
+    let acks = &mut (unsafe { self.data_mut() })[..ACK_FIELD_LEN];
+    for offset in range {
+      let byte = offset / 8;
+      let bit = offset % 8;
+      acks[byte as usize] |= 1 << bit;
+    }
+  }
+
+  /// Returns the first unacked segment after `start`, and its offset.
+  pub fn get_unacked_segment(&self, start: u8) -> Option<(u8, &[u8])> {
+    let (acks, payload) = unsafe { self.data() }.split_at(ACK_FIELD_LEN);
+    for offset in start..=(ACK_FIELD_LEN * 8 - 1) as u8 {
+      let byte = offset / 8;
+      let bit = offset % 8;
+      if acks[byte as usize] & (1 << bit) != (1 << bit) {
+        let pos = offset as usize * 256;
+        let len = self.segment_len(offset);
+        return Some((offset as u8, &payload[pos..pos + len]));
+      }
+    }
+    None
+  }
+
+  pub fn is_reliable(&self) -> bool {
+    self.is_reliable
+  }
+
+  /// Return length of segment at `offset`.
+  ///
+  /// Returns `SEGMENT_SIZE` for any offset in range `0..=self.num_full_segments`,
+  /// and an arbitrary number in the range `0..256` otherwise.
+  #[inline]
+  fn segment_len(&self, offset: u8) -> usize {
+    let offset = offset as usize;
+    let num_full_segments = self.num_full_segments as usize;
+    let last_segment_len = self.last_segment_len as usize;
+    let c = if offset >= num_full_segments { 1 } else { 0 };
+    ((1 - c) * 256) + (c * last_segment_len)
+  }
+
+  /// Length of `self.data`
+  #[inline]
+  fn data_len(&self) -> usize {
+    ACK_FIELD_LEN + self.num_full_segments as usize * SEGMENT_SIZE + self.last_segment_len as usize
+  }
+
+  /// Length of the payload part of `self.data`
+  #[inline]
+  fn len(&self) -> usize {
+    self.num_full_segments as usize * SEGMENT_SIZE + self.last_segment_len as usize
+  }
+
+  #[inline]
+  unsafe fn data_mut(&mut self) -> &mut [u8] {
+    std::slice::from_raw_parts_mut(self.data.as_ptr(), self.data_len())
+  }
+
+  #[inline]
+  unsafe fn data(&self) -> &[u8] {
+    std::slice::from_raw_parts(self.data.as_ptr(), self.data_len())
+  }
+}
+
+impl Drop for Message {
+  fn drop(&mut self) {
+    // SAFETY: `self.data` was acquired from a Box<[u8]>
+    let data = unsafe {
+      Box::from_raw(std::ptr::slice_from_raw_parts_mut(self.data.as_ptr(), self.data_len()))
+    };
+    drop(data);
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  //use pretty_assertions::assert_eq;
+
+  #[test]
+  fn message_length_is_correct() {
+    let payload = &[0u8; 256][..];
+    let msg = Message::new(true, payload);
+    assert_eq!(msg.len(), payload.len());
+    assert_eq!(msg.data_len(), ACK_FIELD_LEN + payload.len());
+    assert_eq!(msg.num_full_segments, 1);
+    assert_eq!(msg.last_segment_len, 0);
+
+    let payload = &[0u8; 257][..];
+    let msg = Message::new(true, payload);
+    assert_eq!(msg.len(), payload.len());
+    assert_eq!(msg.data_len(), ACK_FIELD_LEN + payload.len());
+    assert_eq!(msg.num_full_segments, 1);
+    assert_eq!(msg.last_segment_len, 1);
+
+    let payload = &[0u8; 255][..];
+    let msg = Message::new(true, payload);
+    assert_eq!(msg.len(), payload.len());
+    assert_eq!(msg.data_len(), ACK_FIELD_LEN + payload.len());
+    assert_eq!(msg.num_full_segments, 0);
+    assert_eq!(msg.last_segment_len, 255);
+
+    let payload = &[0u8; 0];
+    let msg = Message::new(true, payload);
+    assert_eq!(msg.len(), payload.len());
+    assert_eq!(msg.data_len(), ACK_FIELD_LEN + payload.len());
+    assert_eq!(msg.num_full_segments, 0);
+    assert_eq!(msg.last_segment_len, 0);
+  }
+
+  #[test]
+  #[should_panic]
+  fn message_too_large() {
+    let payload = &[0u8; 1 << 16];
+    Message::new(true, payload);
+  }
+
+  #[test]
+  fn message_largest_possible() {
+    let payload = [255u8; (1 << 16) - 1];
+    let msg = Message::new(true, &payload[..]);
+    assert_eq!(msg.len(), payload.len());
+    assert_eq!(msg.data_len(), ACK_FIELD_LEN + payload.len());
+    assert_eq!(msg.num_full_segments, 255);
+    assert_eq!(msg.last_segment_len, 255);
+
+    // we should be able to transparently reconstruct the original payload
+    let mut buffer = [0u8; (1 << 16) - 1];
+    for i in 0..=255 {
+      let segment = msg.get_unacked_segment(i);
+      assert!(segment.is_some(), "failed to get segment {i}");
+      let (offset, data) = segment.unwrap();
+      let pos = offset as usize * SEGMENT_SIZE;
+      buffer[pos..pos + data.len()].copy_from_slice(data);
+    }
+
+    assert_eq!(payload, buffer);
+  }
+
+  #[test]
+  fn message_unacked() {
+    // 4 segments
+    let payload = [0u8; 1024];
+    let msg = Message::new(true, &payload[..]);
+
+    assert_eq!(msg.get_unacked_segment(0), Some((0u8, &payload[0..256])));
+    assert_eq!(msg.get_unacked_segment(1), Some((1u8, &payload[256..512])));
+    assert_eq!(msg.get_unacked_segment(2), Some((2u8, &payload[512..768])));
+    assert_eq!(msg.get_unacked_segment(3), Some((3u8, &payload[768..1024])));
+  }
+
+  #[test]
+  fn message_acked_start() {
+    // 4 segments
+    let payload = [0u8; 1024];
+    let mut msg = Message::new(true, &payload[..]);
+
+    msg.ack(0..1);
+
+    assert_eq!(msg.get_unacked_segment(0), Some((1u8, &payload[256..512])));
+    assert_eq!(msg.get_unacked_segment(1), Some((1u8, &payload[256..512])));
+    assert_eq!(msg.get_unacked_segment(2), Some((2u8, &payload[512..768])));
+    assert_eq!(msg.get_unacked_segment(3), Some((3u8, &payload[768..1024])));
+  }
+
+  #[test]
+  fn message_acked_mid() {
+    // 4 segments
+    let payload = [0u8; 1024];
+    let mut msg = Message::new(true, &payload[..]);
+
+    msg.ack(1..3);
+
+    assert_eq!(msg.get_unacked_segment(0), Some((0u8, &payload[0..256])));
+    assert_eq!(msg.get_unacked_segment(1), Some((3u8, &payload[768..1024])));
+    assert_eq!(msg.get_unacked_segment(2), Some((3u8, &payload[768..1024])));
+    assert_eq!(msg.get_unacked_segment(3), Some((3u8, &payload[768..1024])));
+  }
+
+  #[test]
+  fn message_acked_end() {
+    // 4 segments
+    let payload = [0u8; 1024];
+    let mut msg = Message::new(true, &payload[..]);
+
+    msg.ack(3..4);
+
+    assert_eq!(msg.get_unacked_segment(0), Some((0u8, &payload[0..256])));
+    assert_eq!(msg.get_unacked_segment(1), Some((1u8, &payload[256..512])));
+    assert_eq!(msg.get_unacked_segment(2), Some((2u8, &payload[512..768])));
+    assert_eq!(msg.get_unacked_segment(3), None);
+  }
+}

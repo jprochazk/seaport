@@ -1,4 +1,8 @@
-#![feature(arbitrary_enum_discriminant)]
+mod detail;
 
-pub mod packet;
-pub mod socket;
+mod codec;
+mod congestion;
+mod message;
+mod packet;
+mod socket;
+mod varint;

@@ -5,10 +5,7 @@ use std::{
 
 fn init_log() {
   // default RUST_LOG=info
-  std::env::set_var(
-    "RUST_LOG",
-    std::env::var("RUST_LOG").unwrap_or_else(|_| "info".into()),
-  );
+  std::env::set_var("RUST_LOG", std::env::var("RUST_LOG").unwrap_or_else(|_| "info".into()));
   env_logger::init();
 }
 

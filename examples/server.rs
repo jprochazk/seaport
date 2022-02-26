@@ -1,12 +1,11 @@
-use mio::{net::UdpSocket, Events, Interest, Poll, Token};
-use std::{io, net::SocketAddr, sync::mpsc::channel, time::Duration};
+use {
+  mio::{net::UdpSocket, Events, Interest, Poll, Token},
+  std::{io, net::SocketAddr, sync::mpsc::channel, time::Duration},
+};
 
 fn init_log() {
   // default RUST_LOG=info
-  std::env::set_var(
-    "RUST_LOG",
-    std::env::var("RUST_LOG").unwrap_or_else(|_| "info".into()),
-  );
+  std::env::set_var("RUST_LOG", std::env::var("RUST_LOG").unwrap_or_else(|_| "info".into()));
   env_logger::init();
 }
 
@@ -20,10 +19,7 @@ fn main() {
   let mut poll = Poll::new().unwrap();
 
   const SOCKET: Token = Token(0);
-  poll
-    .registry()
-    .register(&mut socket, SOCKET, Interest::WRITABLE | Interest::READABLE)
-    .unwrap();
+  poll.registry().register(&mut socket, SOCKET, Interest::WRITABLE | Interest::READABLE).unwrap();
 
   // messages are queued and echoed back to their source address
   let (sender, receiver) = channel::<(SocketAddr, String)>();
@@ -32,9 +28,7 @@ fn main() {
 
   let mut events = Events::with_capacity(128);
   loop {
-    poll
-      .poll(&mut events, Some(Duration::from_millis(100)))
-      .unwrap();
+    poll.poll(&mut events, Some(Duration::from_millis(100))).unwrap();
     for event in events.iter() {
       match event.token() {
         // write one message per writable event
