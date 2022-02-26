@@ -225,17 +225,15 @@ impl Message {
 
   #[inline]
   fn data_mut(&mut self) -> &mut [u8] {
-    // SAFETY: requirements are fulfilled in `Message::new`
-    // + data is always accessed through either `full_data` or `full_data_mut`,
-    //   which means borrow rules are also followed
+    // SAFETY: requirements are fulfilled by allocating data through `Vec`
+    // + data is always accessed through either `data` or `data_mut`, which means borrow checking rules are enforced
     unsafe { std::slice::from_raw_parts_mut(self.data.as_ptr(), self.data_len()) }
   }
 
   #[inline]
   fn data(&self) -> &[u8] {
-    // SAFETY: requirements are fulfilled in `Message::new`
-    // + data is always accessed through either `full_data` or `full_data_mut`,
-    //   which means borrow rules are also followed
+    // SAFETY: requirements are fulfilled by allocating data through `Vec`
+    // + data is always accessed through either `data` or `data_mut`, which means borrow checking rules are enforced
     unsafe { std::slice::from_raw_parts(self.data.as_ptr(), self.data_len()) }
   }
 }
