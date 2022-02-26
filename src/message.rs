@@ -99,12 +99,19 @@ impl Message {
   }
 
   // get segment (offset: u8) -> &[u8]
+  pub fn get(&self, offset: u8) -> &[u8] {
+    let pos = offset as usize * SEGMENT_SIZE;
+    &self.payload()[pos..pos + SEGMENT_SIZE]
+  }
   // set segment (offset: u8, data: &[u8])
-  // get unacked segment (offset: u8) -> Option<&[u8]>
+  pub fn put(&mut self, offset: u8, data: &[u8]) {
+    let pos = offset as usize * SEGMENT_SIZE;
+    self.payload_mut()[pos..pos + SEGMENT_SIZE].copy_from_slice(data);
+  }
 
   /// Set segment ack status in range `start..start+length` to acknowledged.
   pub fn ack(&mut self, range: Range<u8>) {
-    let acks = &mut (unsafe { self.data_mut() })[..ACK_FIELD_LEN];
+    let acks = self.acks_mut();
     for offset in range {
       let byte = offset / 8;
       let bit = offset % 8;
@@ -114,12 +121,12 @@ impl Message {
 
   /// Returns the first unacked segment after `start`, and its offset.
   pub fn get_unacked_segment(&self, start: u8) -> Option<(u8, &[u8])> {
-    let (acks, payload) = unsafe { self.data() }.split_at(ACK_FIELD_LEN);
+    let (acks, payload) = self.split();
     for offset in start..=(ACK_FIELD_LEN * 8 - 1) as u8 {
       let byte = offset / 8;
       let bit = offset % 8;
       if acks[byte as usize] & (1 << bit) != (1 << bit) {
-        let pos = offset as usize * 256;
+        let pos = offset as usize * SEGMENT_SIZE;
         let len = self.segment_len(offset);
         return Some((offset as u8, &payload[pos..pos + len]));
       }
@@ -127,6 +134,13 @@ impl Message {
     None
   }
 
+  /// Length of the payload
+  #[inline]
+  pub fn len(&self) -> usize {
+    self.num_full_segments as usize * SEGMENT_SIZE + self.last_segment_len as usize
+  }
+
+  #[inline]
   pub fn is_reliable(&self) -> bool {
     self.is_reliable
   }
@@ -134,14 +148,14 @@ impl Message {
   /// Return length of segment at `offset`.
   ///
   /// Returns `SEGMENT_SIZE` for any offset in range `0..=self.num_full_segments`,
-  /// and an arbitrary number in the range `0..256` otherwise.
+  /// and an arbitrary number in the range `0..SEGMENT_SIZE` otherwise.
   #[inline]
   fn segment_len(&self, offset: u8) -> usize {
-    let offset = offset as usize;
-    let num_full_segments = self.num_full_segments as usize;
-    let last_segment_len = self.last_segment_len as usize;
-    let c = if offset >= num_full_segments { 1 } else { 0 };
-    ((1 - c) * 256) + (c * last_segment_len)
+    if offset >= self.num_full_segments {
+      self.last_segment_len as usize
+    } else {
+      SEGMENT_SIZE
+    }
   }
 
   /// Length of `self.data`
@@ -150,26 +164,56 @@ impl Message {
     ACK_FIELD_LEN + self.num_full_segments as usize * SEGMENT_SIZE + self.last_segment_len as usize
   }
 
-  /// Length of the payload part of `self.data`
   #[inline]
-  fn len(&self) -> usize {
-    self.num_full_segments as usize * SEGMENT_SIZE + self.last_segment_len as usize
+  fn acks_mut(&mut self) -> &mut [u8] {
+    &mut self.data_mut()[0..ACK_FIELD_LEN]
   }
 
   #[inline]
-  unsafe fn data_mut(&mut self) -> &mut [u8] {
-    std::slice::from_raw_parts_mut(self.data.as_ptr(), self.data_len())
+  fn acks(&self) -> &[u8] {
+    &self.data()[0..ACK_FIELD_LEN]
   }
 
   #[inline]
-  unsafe fn data(&self) -> &[u8] {
-    std::slice::from_raw_parts(self.data.as_ptr(), self.data_len())
+  fn payload(&self) -> &[u8] {
+    &self.data()[ACK_FIELD_LEN..]
+  }
+
+  #[inline]
+  fn payload_mut(&mut self) -> &mut [u8] {
+    &mut self.data_mut()[ACK_FIELD_LEN..]
+  }
+
+  #[inline]
+  fn split(&self) -> (&[u8], &[u8]) {
+    self.data().split_at(ACK_FIELD_LEN)
+  }
+
+  #[inline]
+  fn split_mut(&mut self) -> (&mut [u8], &mut [u8]) {
+    self.data_mut().split_at_mut(ACK_FIELD_LEN)
+  }
+
+  #[inline]
+  fn data_mut(&mut self) -> &mut [u8] {
+    // SAFETY: requirements are fulfilled in `Message::new`
+    // + data is always accessed through either `full_data` or `full_data_mut`,
+    //   which means borrow rules are also followed
+    unsafe { std::slice::from_raw_parts_mut(self.data.as_ptr(), self.data_len()) }
+  }
+
+  #[inline]
+  fn data(&self) -> &[u8] {
+    // SAFETY: requirements are fulfilled in `Message::new`
+    // + data is always accessed through either `full_data` or `full_data_mut`,
+    //   which means borrow rules are also followed
+    unsafe { std::slice::from_raw_parts(self.data.as_ptr(), self.data_len()) }
   }
 }
 
 impl Drop for Message {
   fn drop(&mut self) {
-    // SAFETY: `self.data` was acquired from a Box<[u8]>
+    // SAFETY: requirements are fulfilled in `Message::new`
     let data = unsafe {
       Box::from_raw(std::ptr::slice_from_raw_parts_mut(self.data.as_ptr(), self.data_len()))
     };
