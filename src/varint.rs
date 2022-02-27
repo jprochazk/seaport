@@ -43,6 +43,10 @@ impl VarInt {
       Some(VarInt(value))
     }
   }
+
+  pub fn into_inner(self) -> u64 {
+    self.0
+  }
 }
 
 impl Encode for VarInt {

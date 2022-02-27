@@ -1,3 +1,4 @@
+#![feature(arbitrary_enum_discriminant)]
 #![allow(dead_code)]
 
 mod codec;

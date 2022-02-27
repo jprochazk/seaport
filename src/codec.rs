@@ -7,6 +7,10 @@ use {
 pub enum Error {
   #[error("unexpected end of input")]
   UnexpectedEof,
+  #[error("invalid {0} kind")]
+  InvalidKind(&'static str),
+  #[error("maximum {0} size exceeded")]
+  TooLarge(&'static str),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

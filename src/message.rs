@@ -5,7 +5,7 @@ use {
 
 // We need to be able to ack 256 segments at 1 bit per segment
 const ACK_FIELD_LEN: usize = 256 / 8;
-const SEGMENT_SIZE: usize = 256;
+pub const SEGMENT_SIZE: usize = 256;
 
 /// A message is a wrapper over a payload which keeps track of the acknowledgement status of disjoint segments.
 #[repr(align(16))]
