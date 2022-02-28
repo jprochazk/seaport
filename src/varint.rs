@@ -92,7 +92,9 @@ impl Decode for VarInt {
         return Err(codec::Error::UnexpectedEof);
       }
       buf.copy_to_slice(&mut data[1..size_of::<u32>()]);
-      Ok(VarInt(u32::from_be_bytes([data[0], data[1], data[2], data[3]]) as u64))
+      Ok(VarInt(
+        u32::from_be_bytes([data[0], data[1], data[2], data[3]]) as u64,
+      ))
     } else if ty == 0b0100_0000 {
       // u16
       if buf.remaining() < size_of::<u16>() - 1 {
@@ -143,7 +145,10 @@ mod tests {
     assert_encode!(1, [0b00000001]);
     assert_encode!(2u64.pow(6) - 1, [0b00_111111]);
     assert_encode!(2u64.pow(14) - 1, [0b01_111111, 0b11111111]);
-    assert_encode!(2u64.pow(30) - 1, [0b10_111111, 0b11111111, 0b11111111, 0b11111111]);
+    assert_encode!(
+      2u64.pow(30) - 1,
+      [0b10_111111, 0b11111111, 0b11111111, 0b11111111]
+    );
     assert_encode!(
       2u64.pow(62) - 1,
       [
@@ -173,7 +178,10 @@ mod tests {
     assert_decode!([0b00000001], 1);
     assert_decode!([0b00_111111], 2u64.pow(6) - 1);
     assert_decode!([0b01_111111, 0b11111111], 2u64.pow(14) - 1);
-    assert_decode!([0b10_111111, 0b11111111, 0b11111111, 0b11111111], 2u64.pow(30) - 1);
+    assert_decode!(
+      [0b10_111111, 0b11111111, 0b11111111, 0b11111111],
+      2u64.pow(30) - 1
+    );
     assert_decode!(
       [
         0b11_111111,

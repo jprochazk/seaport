@@ -21,7 +21,10 @@ impl Decode for Header {
   fn decode<B: bytes::Buf>(buf: &mut B) -> codec::Result<Self> {
     let protocol = u8::decode(buf)?;
     let packet_id = u32::decode(buf)?;
-    Ok(Self { protocol, packet_id })
+    Ok(Self {
+      protocol,
+      packet_id,
+    })
   }
 }
 
@@ -124,7 +127,11 @@ impl Decode for Segment {
     let last_segment_len = u8::decode(buf)?;
     let segment_offset = u8::decode(buf)?;
     let segment_len = u8::decode(buf)?;
-    let len = if segment_offset == num_full_segments { segment_len as usize } else { SEGMENT_SIZE };
+    let len = if segment_offset == num_full_segments {
+      segment_len as usize
+    } else {
+      SEGMENT_SIZE
+    };
     if buf.remaining() < len {
       return Err(codec::Error::UnexpectedEof);
     }
@@ -168,7 +175,11 @@ impl Decode for Packet {
     while buf.has_remaining() {
       segments.push(Segment::decode(buf)?);
     }
-    Ok(Self { header, acks, segments })
+    Ok(Self {
+      header,
+      acks,
+      segments,
+    })
   }
 }
 
@@ -189,7 +200,9 @@ mod tests {
   #[test]
   fn encode_and_decode_acks() {
     let range = Range { start: 0, len: 0 };
-    let ack = Ack { ranges: vec![range, range] };
+    let ack = Ack {
+      ranges: vec![range, range],
+    };
     let mut buf = bytes::BytesMut::new();
     ack.encode(&mut buf);
     let mut buf = buf.freeze();
@@ -212,7 +225,10 @@ mod tests {
     let mut buf = bytes::BytesMut::new();
     segment.encode(&mut buf);
     let mut buf = buf.freeze();
-    assert_eq!(buf.len(), /* segment header */ 6 + /* segment data */ 256);
+    assert_eq!(
+      buf.len(),
+      /* segment header */ 6 + /* segment data */ 256
+    );
     assert_eq!(Segment::decode(&mut buf).unwrap(), segment);
 
     segment.segment_offset += 1;
@@ -222,7 +238,10 @@ mod tests {
     let mut buf = bytes::BytesMut::new();
     segment.encode(&mut buf);
     let mut buf = buf.freeze();
-    assert_eq!(buf.len(), /* segment header */ 6 + /* segment data */ 255);
+    assert_eq!(
+      buf.len(),
+      /* segment header */ 6 + /* segment data */ 255
+    );
     assert_eq!(Segment::decode(&mut buf).unwrap(), segment);
   }
 

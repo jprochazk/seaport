@@ -78,7 +78,10 @@ impl<'a> Receiver<'a> {
   /// # Panics
   /// - If `buf.len()` is not equal to `65536`
   #[inline]
-  pub fn recv_from<'b>(&self, buf: &'b mut [u8]) -> io::Result<Option<(&'b [u8], SocketAddr)>> {
+  pub fn recv_from<'b>(
+    &self,
+    buf: &'b mut [u8],
+  ) -> io::Result<Option<(&'b [u8], SocketAddr)>> {
     debug_assert!(buf.len() == 1 << 16);
     match self.0.recv_from(buf) {
       Ok((len, addr)) => Ok(Some((&buf[..len], addr))),
@@ -99,7 +102,12 @@ impl Socket {
       mio::Interest::READABLE | mio::Interest::WRITABLE,
     )?;
     let events = mio::Events::with_capacity(1024);
-    Ok(Self { inner, addr, poll, events })
+    Ok(Self {
+      inner,
+      addr,
+      poll,
+      events,
+    })
   }
 
   pub fn connect(addr: SocketAddr) -> io::Result<Self> {
@@ -113,7 +121,12 @@ impl Socket {
       mio::Interest::READABLE | mio::Interest::WRITABLE,
     )?;
     let events = mio::Events::with_capacity(1024);
-    Ok(Self { inner, addr, poll, events })
+    Ok(Self {
+      inner,
+      addr,
+      poll,
+      events,
+    })
   }
 
   /// Poll the socket for readiness events.

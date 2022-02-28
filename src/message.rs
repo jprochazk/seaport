@@ -63,7 +63,9 @@ impl Message {
     }
 
     // discard the capacity and length fields
-    let data = ptr::NonNull::new(Box::into_raw(data.into_boxed_slice()) as *mut u8).unwrap();
+    let data =
+      ptr::NonNull::new(Box::into_raw(data.into_boxed_slice()) as *mut u8)
+        .unwrap();
 
     Self {
       data,
@@ -74,7 +76,8 @@ impl Message {
   }
 
   pub fn incoming(num_full_segments: u8, last_segment_len: u8) -> Self {
-    let len = num_full_segments as usize * SEGMENT_SIZE + last_segment_len as usize;
+    let len =
+      num_full_segments as usize * SEGMENT_SIZE + last_segment_len as usize;
     let num_segments = ceil_div(len, SEGMENT_SIZE);
 
     // allocate data, copy payload into it
@@ -88,9 +91,16 @@ impl Message {
     }
 
     // discard the capacity and length fields
-    let data = ptr::NonNull::new(Box::into_raw(data.into_boxed_slice()) as *mut u8).unwrap();
+    let data =
+      ptr::NonNull::new(Box::into_raw(data.into_boxed_slice()) as *mut u8)
+        .unwrap();
 
-    Self { data, num_full_segments, last_segment_len, is_reliable: true }
+    Self {
+      data,
+      num_full_segments,
+      last_segment_len,
+      is_reliable: true,
+    }
   }
 
   /// Retrieve segment at `offset`.
@@ -140,7 +150,8 @@ impl Message {
   /// Length of the payload
   #[inline]
   pub fn len(&self) -> usize {
-    self.num_full_segments as usize * SEGMENT_SIZE + self.last_segment_len as usize
+    self.num_full_segments as usize * SEGMENT_SIZE
+      + self.last_segment_len as usize
   }
 
   #[inline]
@@ -164,7 +175,9 @@ impl Message {
   /// Length of `self.data`
   #[inline]
   fn data_len(&self) -> usize {
-    ACK_FIELD_LEN + self.num_full_segments as usize * SEGMENT_SIZE + self.last_segment_len as usize
+    ACK_FIELD_LEN
+      + self.num_full_segments as usize * SEGMENT_SIZE
+      + self.last_segment_len as usize
   }
 
   #[inline]
@@ -201,7 +214,9 @@ impl Message {
   fn data_mut(&mut self) -> &mut [u8] {
     // SAFETY: requirements are fulfilled by allocating data through `Vec`
     // + data is always accessed through either `data` or `data_mut`, which means borrow checking rules are enforced
-    unsafe { std::slice::from_raw_parts_mut(self.data.as_ptr(), self.data_len()) }
+    unsafe {
+      std::slice::from_raw_parts_mut(self.data.as_ptr(), self.data_len())
+    }
   }
 
   #[inline]
@@ -216,7 +231,10 @@ impl Drop for Message {
   fn drop(&mut self) {
     // SAFETY: requirements are fulfilled in `Message::new`
     let data = unsafe {
-      Box::from_raw(std::ptr::slice_from_raw_parts_mut(self.data.as_ptr(), self.data_len()))
+      Box::from_raw(std::ptr::slice_from_raw_parts_mut(
+        self.data.as_ptr(),
+        self.data_len(),
+      ))
     };
     drop(data);
   }
