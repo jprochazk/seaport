@@ -49,6 +49,26 @@ impl VarInt {
   }
 }
 
+macro_rules! impl_from {
+  ($ty:ident) => {
+    impl From<$ty> for VarInt {
+      fn from(v: $ty) -> Self {
+        Self::$ty(v)
+      }
+    }
+  };
+}
+impl_from!(u8);
+impl_from!(u16);
+impl_from!(u32);
+impl TryFrom<u64> for VarInt {
+  type Error = ();
+
+  fn try_from(value: u64) -> Result<Self, Self::Error> {
+    Self::u64(value).ok_or(())
+  }
+}
+
 impl Encode for VarInt {
   fn encode<B: bytes::BufMut>(&self, buf: &mut B) {
     let v = self.0;

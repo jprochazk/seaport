@@ -1,7 +1,4 @@
-use std::{
-  io, net,
-  time::{Duration, Instant},
-};
+use std::{io, net, time::Instant};
 
 fn init_log() {
   // default RUST_LOG=info

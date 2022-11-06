@@ -119,6 +119,8 @@ impl Latency {
   ///
   /// - latency: Time between the sender sending a packet and receiving an acknowledgement for it
   /// - delay: Time between the receiver receiving a packet and sending an acknowledgement for it
+  ///
+  /// `delay` should not be more than the configured `max_ack_delay`, and global `ACK_DELAY_LIMIT`.
   pub fn update(&mut self, latency: Duration, delay: Duration) {
     self.last = latency;
     self.min = std::cmp::min(self.min, latency);

@@ -1,19 +1,6 @@
 # seaport
 
-Note: This library is under heavy development and almost none of the features are properly implemented yet. Stay tuned.
-
-### Feature status
-
-| feature                | status |
-| ---------------------- | ------ |
-| sockets + reliability  | done   |
-| virtual connections    | inp    |
-| congestion control     | nyi    |
-| fragmentation          | nyi    |
-| multiplexing           | nyi    |
-
-- virtual connections:
-  - in progress
+This library is under heavy development and almost none of the features are properly implemented yet.
 
 ## License
 

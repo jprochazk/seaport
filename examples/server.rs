@@ -28,7 +28,7 @@ fn main() {
     .unwrap();
 
   // messages are queued and echoed back to their source address
-  let (sender, receiver) = channel::<(SocketAddr, String)>();
+  let (_, receiver) = channel::<(SocketAddr, String)>();
 
   let mut read_buffer = vec![0u8; 65536];
 

@@ -1,30 +1,50 @@
+use std::{
+  collections::hash_map::DefaultHasher,
+  hash::{Hash, Hasher},
+};
+
 use crate::{
   codec::{self, Decode, Encode},
   message::SEGMENT_SIZE,
   varint::VarInt,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Header {
-  pub protocol: u8,
-  pub packet_id: u32,
-}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Protocol(pub u64);
 
-impl Encode for Header {
-  fn encode<B: bytes::BufMut>(&self, buf: &mut B) {
-    self.protocol.encode(buf);
-    self.packet_id.encode(buf);
+impl Protocol {
+  pub fn new(v: impl Hash) -> Self {
+    let mut state = DefaultHasher::new();
+    v.hash(&mut state);
+    Self(state.finish())
+  }
+
+  pub fn into_inner(self) -> u64 {
+    self.0
   }
 }
 
-impl Decode for Header {
+impl From<Protocol> for u64 {
+  fn from(v: Protocol) -> Self {
+    v.0
+  }
+}
+
+impl From<u64> for Protocol {
+  fn from(v: u64) -> Self {
+    Self(v)
+  }
+}
+
+impl Encode for Protocol {
+  fn encode<B: bytes::BufMut>(&self, buf: &mut B) {
+    self.0.encode(buf);
+  }
+}
+
+impl Decode for Protocol {
   fn decode<B: bytes::Buf>(buf: &mut B) -> codec::Result<Self> {
-    let protocol = u8::decode(buf)?;
-    let packet_id = u32::decode(buf)?;
-    Ok(Self {
-      protocol,
-      packet_id,
-    })
+    Ok(Self(Decode::decode(buf)?))
   }
 }
 
@@ -35,23 +55,24 @@ impl Decode for Header {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Range {
   /// Highest acked packet id
-  pub start: u64,
+  pub start: VarInt,
   /// Number of packets before `start` to ack
-  pub len: u64,
+  pub len: VarInt,
 }
 
 impl Encode for Range {
   fn encode<B: bytes::BufMut>(&self, buf: &mut B) {
-    VarInt::u64(self.start).unwrap().encode(buf);
-    VarInt::u64(self.len).unwrap().encode(buf);
+    self.start.encode(buf);
+    self.len.encode(buf);
   }
 }
 
 impl Decode for Range {
   fn decode<B: bytes::Buf>(buf: &mut B) -> codec::Result<Self> {
-    let start = VarInt::decode(buf)?.into_inner();
-    let len = VarInt::decode(buf)?.into_inner();
-    Ok(Self { start, len })
+    Ok(Self {
+      start: Decode::decode(buf)?,
+      len: Decode::decode(buf)?,
+    })
   }
 }
 
@@ -151,15 +172,49 @@ impl Decode for Segment {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Packet {
-  header: Header,
+pub struct Handshake {
+  /// Application-specific protocol token
+  protocol: Protocol,
+  /// Maximum packet processing delay in milliseconds
+  max_ack_delay: u8,
+  /// Number of channels
+  channels: u8,
+  /// Maximum number of streams
+  max_streams: u8,
+}
+
+impl Encode for Handshake {
+  fn encode<B: bytes::BufMut>(&self, buf: &mut B) {
+    self.protocol.encode(buf);
+    self.max_ack_delay.encode(buf);
+    self.channels.encode(buf);
+    self.max_streams.encode(buf);
+  }
+}
+
+impl Decode for Handshake {
+  fn decode<B: bytes::Buf>(buf: &mut B) -> codec::Result<Self> {
+    Ok(Self {
+      protocol: Decode::decode(buf)?,
+      max_ack_delay: Decode::decode(buf)?,
+      channels: Decode::decode(buf)?,
+      max_streams: Decode::decode(buf)?,
+    })
+  }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Data {
+  protocol: Protocol,
+  packet_id: u32,
   acks: Ack,
   segments: Vec<Segment>,
 }
 
-impl Encode for Packet {
+impl Encode for Data {
   fn encode<B: bytes::BufMut>(&self, buf: &mut B) {
-    self.header.encode(buf);
+    self.protocol.encode(buf);
+    self.packet_id.encode(buf);
     self.acks.encode(buf);
     for segment in &self.segments {
       segment.encode(buf);
@@ -167,19 +222,62 @@ impl Encode for Packet {
   }
 }
 
-impl Decode for Packet {
+impl Decode for Data {
   fn decode<B: bytes::Buf>(buf: &mut B) -> codec::Result<Self> {
-    let header = Header::decode(buf)?;
+    let protocol = Protocol::decode(buf)?;
+    let packet_id = u32::decode(buf)?;
     let acks = Ack::decode(buf)?;
     let mut segments = Vec::new();
     while buf.has_remaining() {
       segments.push(Segment::decode(buf)?);
     }
     Ok(Self {
-      header,
+      protocol,
+      packet_id,
       acks,
       segments,
     })
+  }
+}
+
+// TODO
+/* #[derive(Debug, Clone, PartialEq)]
+pub struct Stream {
+  protocol: Protocol,
+  packet_id: u32,
+} */
+
+#[derive(Debug, Clone, PartialEq)]
+#[repr(u8)]
+pub enum Packet {
+  Handshake(Handshake),
+  Data(Data),
+  /* Stream(Stream), */
+}
+
+impl Encode for Packet {
+  fn encode<B: bytes::BufMut>(&self, buf: &mut B) {
+    match self {
+      Packet::Handshake(v) => {
+        (0u8).encode(buf);
+        v.encode(buf);
+      }
+      Packet::Data(v) => {
+        (1u8).encode(buf);
+        v.encode(buf);
+      }
+    }
+  }
+}
+
+impl Decode for Packet {
+  fn decode<B: bytes::Buf>(buf: &mut B) -> codec::Result<Self> {
+    let tag = u8::decode(buf)?;
+    match tag {
+      0 => Ok(Self::Handshake(Handshake::decode(buf)?)),
+      1 => Ok(Self::Data(Data::decode(buf)?)),
+      _ => Err(codec::Error::InvalidKind("packet")),
+    }
   }
 }
 
@@ -189,7 +287,10 @@ mod tests {
 
   #[test]
   fn encode_and_decode_range() {
-    let range = Range { start: 0, len: 0 };
+    let range = Range {
+      start: 0u8.into(),
+      len: 0u8.into(),
+    };
     let mut buf = bytes::BytesMut::new();
     range.encode(&mut buf);
     let mut buf = buf.freeze();
@@ -199,7 +300,10 @@ mod tests {
 
   #[test]
   fn encode_and_decode_acks() {
-    let range = Range { start: 0, len: 0 };
+    let range = Range {
+      start: 0u8.into(),
+      len: 0u8.into(),
+    };
     let ack = Ack {
       ranges: vec![range, range],
     };
@@ -245,12 +349,14 @@ mod tests {
     assert_eq!(Segment::decode(&mut buf).unwrap(), segment);
   }
 
-  #[rustfmt::skip]
+  // TODO: handshake packet
+  /* #[rustfmt::skip]
   #[allow(clippy::identity_op)]
   #[test]
-  fn encode_and_decode_packet() {
-    let packet = Packet {
-      header: Header { protocol: 0, packet_id: 0 },
+  fn encode_and_decode_handshake_packet() {
+    let packet = Packet::Data(Data {
+      protocol: Protocol(0),
+      packet_id: 0,
       acks: Ack { ranges: vec![] },
       segments: vec![Segment {
         message_id: 0,
@@ -261,7 +367,7 @@ mod tests {
         segment_len: 0,
         data: vec![],
       }],
-    };
+    });
 
     let mut buf = bytes::BytesMut::new();
     packet.encode(&mut buf);
@@ -269,7 +375,50 @@ mod tests {
     assert_eq!(
       buf.len(),
       {
-          1 // protocol
+          1 // type tag
+        + 8 // protocol
+        + 4 // packet_id
+        + 1 // acks.ranges.len()
+        + 0 // acks.ranges[..]
+        + 1 // segments[0].message_id
+        + 1 // segments[0].channel_id
+        + 1 // segments[0].num_full_segments
+        + 1 // segments[0].last_segment_len
+        + 1 // segments[0].segment_offset
+        + 1 // segments[0].segment_len
+        + 0 // segments[0].data[..]
+      }
+    );
+    assert_eq!(Packet::decode(&mut buf).unwrap(), packet);
+  } */
+
+  #[rustfmt::skip]
+  #[allow(clippy::identity_op)]
+  #[test]
+  fn encode_and_decode_data_packet() {
+    let packet = Packet::Data(Data {
+      protocol: Protocol(0),
+      packet_id: 0,
+      acks: Ack { ranges: vec![] },
+      segments: vec![Segment {
+        message_id: 0,
+        channel_id: 0,
+        num_full_segments: 0,
+        last_segment_len: 0,
+        segment_offset: 0,
+        segment_len: 0,
+        data: vec![],
+      }],
+    });
+
+    let mut buf = bytes::BytesMut::new();
+    packet.encode(&mut buf);
+    let mut buf = buf.freeze();
+    assert_eq!(
+      buf.len(),
+      {
+          1 // type tag
+        + 8 // protocol
         + 4 // packet_id
         + 1 // acks.ranges.len()
         + 0 // acks.ranges[..]
